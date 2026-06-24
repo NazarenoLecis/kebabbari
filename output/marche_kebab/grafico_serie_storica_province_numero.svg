@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>.title{font:700 28px Arial,sans-serif;fill:#1f2933}.subtitle{font:400 15px Arial,sans-serif;fill:#52616b}.axis{font:400 12px Arial,sans-serif;fill:#697985}.legend{font:600 13px Arial,sans-serif;fill:#1f2933}.footer{font:400 12px Arial,sans-serif;fill:#697985}</style>
+<text x="36" y="42" class="title">Serie storica kebabbari per provincia</text>
+<text x="36" y="70" class="subtitle">Numero di kebabbari censiti</text>
+<line x1="96" y1="628.0" x2="940" y2="628.0" stroke="#e4e9ed" stroke-width="1"/>
+<text x="84" y="632.0" class="axis" text-anchor="end">0,0000</text>
+<line x1="96" y1="499.0" x2="940" y2="499.0" stroke="#e4e9ed" stroke-width="1"/>
+<text x="84" y="503.0" class="axis" text-anchor="end">0,2500</text>
+<line x1="96" y1="370.0" x2="940" y2="370.0" stroke="#e4e9ed" stroke-width="1"/>
+<text x="84" y="374.0" class="axis" text-anchor="end">0,5000</text>
+<line x1="96" y1="241.0" x2="940" y2="241.0" stroke="#e4e9ed" stroke-width="1"/>
+<text x="84" y="245.0" class="axis" text-anchor="end">0,7500</text>
+<line x1="96" y1="112.0" x2="940" y2="112.0" stroke="#e4e9ed" stroke-width="1"/>
+<text x="84" y="116.0" class="axis" text-anchor="end">1,0000</text>
+<line x1="96.0" y1="628" x2="96.0" y2="633" stroke="#697985" stroke-width="1"/>
+<text x="96.0" y="650" class="axis" text-anchor="middle">2019</text>
+<line x1="216.6" y1="628" x2="216.6" y2="633" stroke="#697985" stroke-width="1"/>
+<text x="216.6" y="650" class="axis" text-anchor="middle">2020</text>
+<line x1="578.3" y1="628" x2="578.3" y2="633" stroke="#697985" stroke-width="1"/>
+<text x="578.3" y="650" class="axis" text-anchor="middle">2023</text>
+<line x1="698.9" y1="628" x2="698.9" y2="633" stroke="#697985" stroke-width="1"/>
+<text x="698.9" y="650" class="axis" text-anchor="middle">2024</text>
+<line x1="940.0" y1="628" x2="940.0" y2="633" stroke="#697985" stroke-width="1"/>
+<text x="940.0" y="650" class="axis" text-anchor="middle">2026</text>
+<polyline points="96.0,628.0 216.6,628.0 578.3,628.0 698.9,628.0 940.0,628.0" fill="none" stroke="#2a9d8f" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="96.0" cy="628.0" r="4" fill="#2a9d8f"/>
+<circle cx="216.6" cy="628.0" r="4" fill="#2a9d8f"/>
+<circle cx="578.3" cy="628.0" r="4" fill="#2a9d8f"/>
+<circle cx="698.9" cy="628.0" r="4" fill="#2a9d8f"/>
+<circle cx="940.0" cy="628.0" r="4" fill="#2a9d8f"/>
+<polyline points="96.0,628.0 216.6,628.0 578.3,628.0 698.9,628.0 940.0,628.0" fill="none" stroke="#e76f51" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="96.0" cy="628.0" r="4" fill="#e76f51"/>
+<circle cx="216.6" cy="628.0" r="4" fill="#e76f51"/>
+<circle cx="578.3" cy="628.0" r="4" fill="#e76f51"/>
+<circle cx="698.9" cy="628.0" r="4" fill="#e76f51"/>
+<circle cx="940.0" cy="628.0" r="4" fill="#e76f51"/>
+<polyline points="96.0,628.0 216.6,628.0 578.3,628.0 698.9,628.0 940.0,628.0" fill="none" stroke="#457b9d" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="96.0" cy="628.0" r="4" fill="#457b9d"/>
+<circle cx="216.6" cy="628.0" r="4" fill="#457b9d"/>
+<circle cx="578.3" cy="628.0" r="4" fill="#457b9d"/>
+<circle cx="698.9" cy="628.0" r="4" fill="#457b9d"/>
+<circle cx="940.0" cy="628.0" r="4" fill="#457b9d"/>
+<polyline points="96.0,628.0 216.6,628.0 578.3,628.0 698.9,628.0 940.0,628.0" fill="none" stroke="#6d597a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="96.0" cy="628.0" r="4" fill="#6d597a"/>
+<circle cx="216.6" cy="628.0" r="4" fill="#6d597a"/>
+<circle cx="578.3" cy="628.0" r="4" fill="#6d597a"/>
+<circle cx="698.9" cy="628.0" r="4" fill="#6d597a"/>
+<circle cx="940.0" cy="628.0" r="4" fill="#6d597a"/>
+<polyline points="96.0,628.0 216.6,628.0 578.3,628.0 698.9,628.0 940.0,628.0" fill="none" stroke="#bc6c25" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="96.0" cy="628.0" r="4" fill="#bc6c25"/>
+<circle cx="216.6" cy="628.0" r="4" fill="#bc6c25"/>
+<circle cx="578.3" cy="628.0" r="4" fill="#bc6c25"/>
+<circle cx="698.9" cy="628.0" r="4" fill="#bc6c25"/>
+<circle cx="940.0" cy="628.0" r="4" fill="#bc6c25"/>
+<rect x="972" y="114" width="14" height="14" fill="#2a9d8f"/>
+<text x="994" y="126" class="legend">Ancona</text>
+<rect x="972" y="140" width="14" height="14" fill="#e76f51"/>
+<text x="994" y="152" class="legend">Ascoli Piceno</text>
+<rect x="972" y="166" width="14" height="14" fill="#457b9d"/>
+<text x="994" y="178" class="legend">Fermo</text>
+<rect x="972" y="192" width="14" height="14" fill="#6d597a"/>
+<text x="994" y="204" class="legend">Macerata</text>
+<rect x="972" y="218" width="14" height="14" fill="#bc6c25"/>
+<text x="994" y="230" class="legend">Pesaro e Urbino</text>
+<line x1="36" y1="686" x2="1164" y2="686" stroke="#e4e9ed" stroke-width="1"/>
+<text x="36" y="708" class="footer">Note: serie storica basata su snapshot storici OpenStreetMap al 1 gennaio di ogni anno; soglia conteggio medium+.</text>
+<text x="36" y="726" class="footer">La serie misura la presenza dei POI in OpenStreetMap, non un registro ufficiale delle aperture.</text>
+<text x="36" y="744" class="footer">Fonti: OpenStreetMap/Overpass; ISTAT Demo POSAS 2026; ISTAT confini amministrativi 2026. Elaborazione di Nazareno Lecis</text>
+</svg>

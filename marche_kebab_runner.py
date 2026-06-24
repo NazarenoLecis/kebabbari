@@ -1,0 +1,454 @@
+"""
+Flusso principale dell'analisi kebabbari.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+from marche_kebab_charts import write_charts, write_historical_charts
+from marche_kebab_utils import (
+    OVERPASS_URL,
+    REGION_NAME,
+    assign_comuni_to_pois,
+    build_summary_rows,
+    dedupe_pois,
+    deve_scrivere_csv,
+    deve_scrivere_grafici,
+    load_comune_shapes,
+    load_extra_pois,
+    load_osm_pois,
+    load_osm_ristorazione_pois,
+    load_population,
+    normalize_text,
+    normalizza_tipo_output,
+    write_csv,
+)
+
+
+# =============================================================================
+# CONFIGURAZIONE
+# Modifica queste variabili e poi esegui:
+# py marche_kebab_runner.py
+# =============================================================================
+
+ANNO_ISTAT = 2026
+CARTELLA_CACHE = Path("data") / "cache"
+CARTELLA_OUTPUT = Path("output") / "marche_kebab"
+
+# True = riscarica ISTAT/OSM anche se i file sono gia' in cache.
+RISCARICA_DATI = False
+
+# False = usa solo parole molto specifiche: kebab, kebap, doner, shawarma.
+# True = include anche keyword piu' larghe: istanbul, anatolia, turkish.
+INCLUDI_KEYWORD_AMPIE = False
+
+# CSV opzionali da Google Places, Registro Imprese o controlli manuali.
+# Esempio: CSV_EXTRA_POI = [Path("google_places_marche.csv")]
+CSV_EXTRA_POI = []
+
+# Soglia per i conteggi: "high", "medium" o "all".
+SOGLIA_CONFIDENZA = "medium"
+
+# Deduplica record con stesso nome entro questa distanza.
+DISTANZA_DEDUP_METRI = 50.0
+
+# Scegli cosa generare: "csv", "grafici" oppure "entrambi".
+TIPO_OUTPUT = "entrambi"
+
+NUMERO_COMUNI_NEI_GRAFICI = 20
+
+# Serie storica provinciale basata su snapshot storici OpenStreetMap.
+GENERA_SERIE_STORICA = True
+ANNI_SERIE_STORICA = list(range(ANNO_ISTAT - 24, ANNO_ISTAT + 1))
+
+
+def build_historical_province_rows(
+    years: list[int],
+    cache_dir: Path,
+    refresh: bool,
+    include_broad_keywords: bool,
+    overpass_url: str,
+    comuni: list[dict[str, Any]],
+    min_confidence: str,
+) -> list[dict[str, Any]]:
+    historical_rows: list[dict[str, Any]] = []
+
+    for history_year in sorted(set(years)):
+        snapshot_date = f"{history_year}-01-01T00:00:00Z"
+        try:
+            population = load_population(history_year, cache_dir, refresh)
+            pois = load_osm_pois(
+                cache_dir,
+                refresh,
+                include_broad_keywords,
+                overpass_url,
+                snapshot_date=snapshot_date,
+            )
+        except Exception as exc:
+            print(
+                f"Attenzione: salto la serie storica {history_year} "
+                f"per errore Overpass/ISTAT: {exc}",
+                flush=True,
+            )
+            continue
+        assign_comuni_to_pois(pois, comuni, population)
+        _, province_rows, _ = build_summary_rows(
+            population,
+            pois,
+            [],
+            min_confidence,
+        )
+        for row in province_rows:
+            historical_rows.append(
+                {
+                    "anno": history_year,
+                    "snapshot_osm": snapshot_date,
+                    "codice_provincia": row["codice_provincia"],
+                    "provincia": row["provincia"],
+                    "popolazione": row["popolazione"],
+                    "kebabbari": row["kebabbari"],
+                    "kebabbari_per_1000": row["kebabbari_per_1000"],
+                }
+            )
+
+    return historical_rows
+
+
+def write_outputs(
+    out_dir: Path,
+    pois: list[dict[str, Any]],
+    ristorazione_pois: list[dict[str, Any]],
+    comune_rows: list[dict[str, Any]],
+    province_rows: list[dict[str, Any]],
+    region_row: dict[str, Any],
+    year: int,
+    include_broad_keywords: bool,
+    min_confidence: str,
+    dedupe_distance_meters: float,
+    overpass_url: str,
+    extra_poi_csv: list[Path],
+    tipo_output: str,
+    chart_top_n: int,
+) -> None:
+    scrivi_csv = deve_scrivere_csv(tipo_output)
+    scrivi_grafici = deve_scrivere_grafici(tipo_output)
+
+    poi_fields = [
+        "name",
+        "source",
+        "source_id",
+        "osm_type",
+        "osm_id",
+        "lat",
+        "lon",
+        "confidence",
+        "matched_terms",
+        "amenity",
+        "cuisine",
+        "addr_street",
+        "addr_housenumber",
+        "addr_city",
+        "phone",
+        "website",
+        "codice_comune",
+        "comune",
+        "codice_provincia",
+        "provincia",
+        "raw_tags_json",
+    ]
+    ristorazione_fields = [
+        "name",
+        "source",
+        "source_id",
+        "osm_type",
+        "osm_id",
+        "lat",
+        "lon",
+        "amenity",
+        "cuisine",
+        "codice_comune",
+        "comune",
+        "codice_provincia",
+        "provincia",
+        "raw_tags_json",
+    ]
+    summary_fields = [
+        "codice_comune",
+        "comune",
+        "codice_provincia",
+        "provincia",
+        "popolazione",
+        "kebabbari",
+        "kebabbari_per_1000",
+        "ristoranti_osm",
+        "kebabbari_per_100_ristoranti",
+    ]
+    province_fields = [
+        "codice_provincia",
+        "provincia",
+        "popolazione",
+        "kebabbari",
+        "kebabbari_per_1000",
+        "ristoranti_osm",
+        "kebabbari_per_100_ristoranti",
+    ]
+
+    pois_sorted = sorted(
+        pois,
+        key=lambda poi: (
+            str(poi.get("codice_provincia", "")),
+            str(poi.get("comune", "")),
+            normalize_text(poi.get("name", "")),
+        ),
+    )
+
+    if scrivi_csv:
+        write_csv(out_dir / "kebabbari_marche.csv", pois_sorted, poi_fields)
+        write_csv(
+            out_dir / "ristorazione_osm_marche.csv",
+            sorted(
+                ristorazione_pois,
+                key=lambda poi: (
+                    str(poi.get("codice_provincia", "")),
+                    str(poi.get("comune", "")),
+                    normalize_text(poi.get("name", "")),
+                ),
+            ),
+            ristorazione_fields,
+        )
+        write_csv(out_dir / "distribuzione_kebabbari_comuni.csv", comune_rows, summary_fields)
+        write_csv(out_dir / "distribuzione_kebabbari_province.csv", province_rows, province_fields)
+        write_csv(out_dir / "distribuzione_kebabbari_regione.csv", [region_row], list(region_row.keys()))
+
+        unassigned = [poi for poi in pois if not poi.get("codice_comune")]
+        unassigned_path = out_dir / "kebabbari_non_assegnati.csv"
+        if unassigned:
+            write_csv(unassigned_path, unassigned, poi_fields)
+        elif unassigned_path.exists():
+            unassigned_path.unlink()
+
+        metadata = {
+            "created_at": dt.datetime.now().isoformat(timespec="seconds"),
+            "region": REGION_NAME,
+            "population_year": year,
+            "boundary_year": year,
+            "osm_include_broad_keywords": include_broad_keywords,
+            "min_confidence_counted": min_confidence,
+            "dedupe_distance_meters": dedupe_distance_meters,
+            "overpass_url": overpass_url,
+            "tipo_output": tipo_output,
+            "note": (
+                "Kebabbaro is not an official statistical category. "
+                "Counts are an operational estimate from the configured sources. "
+                "The restaurant denominator is based on OSM amenities: restaurant, fast_food, food_court."
+            ),
+        }
+        (out_dir / "metadati.json").write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    if scrivi_grafici:
+        write_charts(
+            out_dir,
+            comune_rows,
+            province_rows,
+            year,
+            extra_poi_csv,
+            include_broad_keywords,
+            min_confidence,
+            chart_top_n,
+        )
+
+
+def write_historical_outputs(
+    out_dir: Path,
+    historical_rows: list[dict[str, Any]],
+    year: int,
+    extra_poi_csv: list[Path],
+    min_confidence: str,
+    tipo_output: str,
+) -> None:
+    if not historical_rows:
+        return
+
+    if deve_scrivere_csv(tipo_output):
+        write_csv(
+            out_dir / "serie_storica_kebabbari_province.csv",
+            historical_rows,
+            [
+                "anno",
+                "snapshot_osm",
+                "codice_provincia",
+                "provincia",
+                "popolazione",
+                "kebabbari",
+                "kebabbari_per_1000",
+            ],
+        )
+
+    if deve_scrivere_grafici(tipo_output):
+        write_historical_charts(
+            out_dir,
+            historical_rows,
+            year,
+            extra_poi_csv,
+            min_confidence,
+        )
+
+
+def esegui_analisi(
+    year: int,
+    cache_dir: Path,
+    out_dir: Path,
+    refresh: bool,
+    include_broad_keywords: bool,
+    extra_poi_csv: list[Path],
+    min_confidence: str,
+    dedupe_distance_meters: float,
+    tipo_output: str,
+    chart_top_n: int,
+    overpass_url: str,
+    genera_serie_storica: bool = False,
+    anni_serie_storica: list[int] | None = None,
+) -> dict[str, Any]:
+    start = time.time()
+    tipo_output = normalizza_tipo_output(tipo_output)
+    scrivi_csv = deve_scrivere_csv(tipo_output)
+    scrivi_grafici = deve_scrivere_grafici(tipo_output)
+
+    print(f"Regione: {REGION_NAME}")
+    print(f"Anno ISTAT: {year}")
+    print(f"Output richiesto: {tipo_output}")
+
+    population = load_population(year, cache_dir, refresh)
+    comuni = load_comune_shapes(year, cache_dir, refresh)
+    osm_pois = load_osm_pois(
+        cache_dir,
+        refresh,
+        include_broad_keywords,
+        overpass_url,
+    )
+    ristorazione_pois = load_osm_ristorazione_pois(cache_dir, refresh, overpass_url)
+    extra_pois = load_extra_pois(extra_poi_csv)
+
+    pois = dedupe_pois(osm_pois + extra_pois, dedupe_distance_meters)
+    assign_comuni_to_pois(pois, comuni, population)
+    assign_comuni_to_pois(ristorazione_pois, comuni, population)
+
+    comune_rows, province_rows, region_row = build_summary_rows(
+        population,
+        pois,
+        ristorazione_pois,
+        min_confidence,
+    )
+
+    write_outputs(
+        out_dir,
+        pois,
+        ristorazione_pois,
+        comune_rows,
+        province_rows,
+        region_row,
+        year,
+        include_broad_keywords,
+        min_confidence,
+        dedupe_distance_meters,
+        overpass_url,
+        extra_poi_csv,
+        tipo_output,
+        chart_top_n,
+    )
+
+    historical_rows: list[dict[str, Any]] = []
+    if genera_serie_storica:
+        history_years = anni_serie_storica or [year]
+        historical_rows = build_historical_province_rows(
+            history_years,
+            cache_dir,
+            refresh,
+            include_broad_keywords,
+            overpass_url,
+            comuni,
+            min_confidence,
+        )
+        write_historical_outputs(
+            out_dir,
+            historical_rows,
+            year,
+            extra_poi_csv,
+            min_confidence,
+            tipo_output,
+        )
+        available_history_years = sorted({row["anno"] for row in historical_rows})
+        if available_history_years:
+            print(
+                "Serie storica disponibile per anni: "
+                + ", ".join(str(history_year) for history_year in available_history_years),
+                flush=True,
+            )
+        else:
+            print("Serie storica non disponibile con le fonti correnti.", flush=True)
+
+    print("")
+    print("Output:")
+    if scrivi_csv:
+        print(f"- {out_dir / 'kebabbari_marche.csv'}")
+        print(f"- {out_dir / 'ristorazione_osm_marche.csv'}")
+        print(f"- {out_dir / 'distribuzione_kebabbari_comuni.csv'}")
+        print(f"- {out_dir / 'distribuzione_kebabbari_province.csv'}")
+        print(f"- {out_dir / 'distribuzione_kebabbari_regione.csv'}")
+        if genera_serie_storica:
+            print(f"- {out_dir / 'serie_storica_kebabbari_province.csv'}")
+    if scrivi_grafici:
+        print(f"- {out_dir / 'grafico_province_per_1000.svg'}")
+        print(f"- {out_dir / 'grafico_province_per_100_ristoranti.svg'}")
+        print(f"- {out_dir / 'grafico_comuni_per_numero.svg'}")
+        print(f"- {out_dir / 'grafico_comuni_per_1000.svg'}")
+        print(f"- {out_dir / 'grafico_comuni_per_100_ristoranti.svg'}")
+        if genera_serie_storica:
+            print(f"- {out_dir / 'grafico_serie_storica_province_numero.svg'}")
+            print(f"- {out_dir / 'grafico_serie_storica_province_per_1000.svg'}")
+    print("")
+    print(
+        f"Totale conteggiato ({min_confidence}+): "
+        f"{region_row['kebabbari']} kebabbari, "
+        f"{region_row['kebabbari_per_1000']} per 1.000 abitanti, "
+        f"{region_row['kebabbari_per_100_ristoranti']} per 100 ristoranti OSM."
+    )
+    print(f"Tempo: {time.time() - start:.1f}s")
+    return {
+        "pois": pois,
+        "ristorazione_pois": ristorazione_pois,
+        "comuni": comune_rows,
+        "province": province_rows,
+        "regione": region_row,
+        "serie_storica_province": historical_rows,
+    }
+
+
+def run() -> dict[str, Any]:
+    return esegui_analisi(
+        year=ANNO_ISTAT,
+        cache_dir=CARTELLA_CACHE,
+        out_dir=CARTELLA_OUTPUT,
+        refresh=RISCARICA_DATI,
+        include_broad_keywords=INCLUDI_KEYWORD_AMPIE,
+        extra_poi_csv=CSV_EXTRA_POI,
+        min_confidence=SOGLIA_CONFIDENZA,
+        dedupe_distance_meters=DISTANZA_DEDUP_METRI,
+        tipo_output=TIPO_OUTPUT,
+        chart_top_n=NUMERO_COMUNI_NEI_GRAFICI,
+        overpass_url=OVERPASS_URL,
+        genera_serie_storica=GENERA_SERIE_STORICA,
+        anni_serie_storica=ANNI_SERIE_STORICA,
+    )
+
+
+if __name__ == "__main__":
+    risultati = run()

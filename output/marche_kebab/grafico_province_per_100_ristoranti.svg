@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>.title{font:700 28px Arial,sans-serif;fill:#1f2933}.subtitle{font:400 15px Arial,sans-serif;fill:#52616b}.axis{font:400 12px Arial,sans-serif;fill:#697985}.label{font:600 14px Arial,sans-serif;fill:#1f2933}.value{font:600 13px Arial,sans-serif;fill:#1f2933}.footer{font:400 12px Arial,sans-serif;fill:#697985}</style>
+<text x="36" y="42" class="title">Kebabbari per 100 ristoranti - province Marche</text>
+<text x="36" y="70" class="subtitle">Kebabbari per 100 ristoranti OSM</text>
+<line x1="330.0" y1="120" x2="330.0" y2="330" stroke="#e4e9ed" stroke-width="1"/>
+<text x="330.0" y="112" class="axis" text-anchor="middle">0,0000</text>
+<line x1="490.0" y1="120" x2="490.0" y2="330" stroke="#e4e9ed" stroke-width="1"/>
+<text x="490.0" y="112" class="axis" text-anchor="middle">0,8249</text>
+<line x1="650.0" y1="120" x2="650.0" y2="330" stroke="#e4e9ed" stroke-width="1"/>
+<text x="650.0" y="112" class="axis" text-anchor="middle">1,6498</text>
+<line x1="810.0" y1="120" x2="810.0" y2="330" stroke="#e4e9ed" stroke-width="1"/>
+<text x="810.0" y="112" class="axis" text-anchor="middle">2,4746</text>
+<line x1="970.0" y1="120" x2="970.0" y2="330" stroke="#e4e9ed" stroke-width="1"/>
+<text x="970.0" y="112" class="axis" text-anchor="middle">3,2995</text>
+<text x="312" y="165.0" class="label" text-anchor="end">Ancona</text>
+<rect x="330" y="149.0" width="640.0" height="22" rx="3" fill="#6d597a"/>
+<text x="980.0" y="165.0" class="value">3,2995 per 100 ristoranti | 26/788</text>
+<text x="312" y="201.0" class="label" text-anchor="end">Macerata</text>
+<rect x="330" y="185.0" width="621.2" height="22" rx="3" fill="#6d597a"/>
+<text x="961.2" y="201.0" class="value">3,2028 per 100 ristoranti | 18/562</text>
+<text x="312" y="237.0" class="label" text-anchor="end">Ascoli Piceno</text>
+<rect x="330" y="221.0" width="421.7" height="22" rx="3" fill="#6d597a"/>
+<text x="761.7" y="237.0" class="value">2,1739 per 100 ristoranti | 8/368</text>
+<text x="312" y="273.0" class="label" text-anchor="end">Pesaro e Urbino</text>
+<rect x="330" y="257.0" width="258.6" height="22" rx="3" fill="#6d597a"/>
+<text x="598.6" y="273.0" class="value">1,3333 per 100 ristoranti | 9/675</text>
+<text x="312" y="309.0" class="label" text-anchor="end">Fermo</text>
+<rect x="330" y="293.0" width="222.9" height="22" rx="3" fill="#6d597a"/>
+<text x="562.9" y="309.0" class="value">1,1494 per 100 ristoranti | 2/174</text>
+<line x1="36" y1="346" x2="1164" y2="346" stroke="#e4e9ed" stroke-width="1"/>
+<text x="36" y="368" class="footer">Note: stima OSM; popolazione ISTAT 2026; soglia conteggio medium+.</text>
+<text x="36" y="386" class="footer">Denominatore ristoranti OSM: amenity=restaurant, fast_food, food_court.</text>
+<text x="36" y="404" class="footer">Fonti: OpenStreetMap/Overpass; ISTAT Demo POSAS 2026; ISTAT confini amministrativi 2026. Elaborazione di Nazareno Lecis</text>
+</svg>

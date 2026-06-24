@@ -2,7 +2,10 @@ __pycache__/
 *.py[cod]
 
 data/cache/
-output/
+output/**
+!output/
+!output/**/
+!output/**/*.svg
 
 .venv/
 venv/

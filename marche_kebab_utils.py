@@ -18,26 +18,24 @@ La configurazione resta in marche_kebab_density.py.
 from __future__ import annotations
 
 import csv
-import datetime as dt
 import io
 import json
 import math
 import re
 import struct
-import time
 import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
 from collections import Counter, defaultdict
-from html import escape as html_escape
 from pathlib import Path
 from typing import Any
 
 
 REGION_CODE = "11"
 REGION_NAME = "Marche"
+MARCHE_BBOX = (42.65, 12.15, 44.25, 14.05)  # south, west, north, east
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
@@ -328,24 +326,40 @@ def load_comune_shapes(year: int, cache_dir: Path, refresh: bool) -> list[dict[s
     return comuni
 
 
-def build_overpass_query(include_broad_keywords: bool) -> str:
+def build_overpass_query(
+    include_broad_keywords: bool,
+    snapshot_date: str | None = None,
+    timeout_seconds: int = 90,
+) -> str:
     keyword_regex = STRICT_OVERPASS_REGEX
     if include_broad_keywords:
         keyword_regex = f"{keyword_regex}|{BROAD_OVERPASS_REGEX}"
 
+    date_clause = f'[date:"{snapshot_date}"]' if snapshot_date else ""
+    if snapshot_date:
+        south, west, north, east = MARCHE_BBOX
+        preamble = ""
+        scope = f"({south},{west},{north},{east})"
+    else:
+        preamble = (
+            'area["boundary"="administrative"]["admin_level"="4"]'
+            '["ISO3166-2"="IT-57"]->.searchArea;'
+        )
+        scope = "(area.searchArea)"
+
     return f"""
-[out:json][timeout:90];
-area["boundary"="administrative"]["admin_level"="4"]["ISO3166-2"="IT-57"]->.searchArea;
+[out:json][timeout:{timeout_seconds}]{date_clause};
+{preamble}
 (
-  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["cuisine"~"{keyword_regex}", i](area.searchArea);
-  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["name"~"{keyword_regex}", i](area.searchArea);
-  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["alt_name"~"{keyword_regex}", i](area.searchArea);
-  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["brand"~"{keyword_regex}", i](area.searchArea);
-  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["operator"~"{keyword_regex}", i](area.searchArea);
-  nwr["shop"]["cuisine"~"{keyword_regex}", i](area.searchArea);
-  nwr["shop"]["name"~"{keyword_regex}", i](area.searchArea);
-  nwr["shop"]["brand"~"{keyword_regex}", i](area.searchArea);
-  nwr["shop"]["operator"~"{keyword_regex}", i](area.searchArea);
+  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["cuisine"~"{keyword_regex}", i]{scope};
+  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["name"~"{keyword_regex}", i]{scope};
+  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["alt_name"~"{keyword_regex}", i]{scope};
+  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["brand"~"{keyword_regex}", i]{scope};
+  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["operator"~"{keyword_regex}", i]{scope};
+  nwr["shop"]["cuisine"~"{keyword_regex}", i]{scope};
+  nwr["shop"]["name"~"{keyword_regex}", i]{scope};
+  nwr["shop"]["brand"~"{keyword_regex}", i]{scope};
+  nwr["shop"]["operator"~"{keyword_regex}", i]{scope};
 );
 out center tags;
 """.strip()
@@ -356,19 +370,27 @@ def fetch_osm_payload(
     refresh: bool,
     include_broad_keywords: bool,
     overpass_url: str,
+    snapshot_date: str | None = None,
 ) -> dict[str, Any]:
-    cache_name = "osm_kebab_marche_broad.json" if include_broad_keywords else "osm_kebab_marche.json"
+    cache_prefix = "osm_kebab_marche_broad" if include_broad_keywords else "osm_kebab_marche"
+    if snapshot_date:
+        cache_prefix += "_" + snapshot_date[:10]
+    cache_name = cache_prefix + ".json"
     cache_path = cache_dir / cache_name
     if cache_path.exists() and not refresh:
         return json.loads(cache_path.read_text(encoding="utf-8"))
 
-    query = build_overpass_query(include_broad_keywords)
+    query_timeout = 45 if snapshot_date else 90
+    query = build_overpass_query(include_broad_keywords, snapshot_date, query_timeout)
     body = urllib.parse.urlencode({"data": query}).encode("utf-8")
-    print("Download: OpenStreetMap via Overpass")
+    if snapshot_date:
+        print(f"Download: OpenStreetMap via Overpass ({snapshot_date[:10]})", flush=True)
+    else:
+        print("Download: OpenStreetMap via Overpass", flush=True)
     payload = make_request(
         overpass_url,
         data=body,
-        timeout=180,
+        timeout=75 if snapshot_date else 180,
         content_type="application/x-www-form-urlencoded; charset=utf-8",
     )
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -521,8 +543,15 @@ def load_osm_pois(
     refresh: bool,
     include_broad_keywords: bool,
     overpass_url: str,
+    snapshot_date: str | None = None,
 ) -> list[dict[str, Any]]:
-    payload = fetch_osm_payload(cache_dir, refresh, include_broad_keywords, overpass_url)
+    payload = fetch_osm_payload(
+        cache_dir,
+        refresh,
+        include_broad_keywords,
+        overpass_url,
+        snapshot_date,
+    )
     pois_by_id: dict[str, dict[str, Any]] = {}
     for element in payload.get("elements", []):
         poi = osm_element_to_poi(element, include_broad_keywords)
@@ -919,18 +948,6 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
             writer.writerow(row)
 
 
-def format_int_it(value: Any) -> str:
-    return f"{int(value):,}".replace(",", ".")
-
-
-def format_rate_it(value: Any) -> str:
-    return f"{float(value):.4f}".replace(".", ",")
-
-
-def parse_rate(value: Any) -> float:
-    return float(str(value).replace(",", "."))
-
-
 def normalizza_tipo_output(tipo_output: str) -> str:
     valore = str(tipo_output).strip().lower()
     valori_validi = {"csv", "grafici", "entrambi"}
@@ -947,543 +964,3 @@ def deve_scrivere_csv(tipo_output: str) -> bool:
 
 def deve_scrivere_grafici(tipo_output: str) -> bool:
     return tipo_output in {"grafici", "entrambi"}
-
-
-def truncate_label(value: Any, max_chars: int = 38) -> str:
-    text = str(value)
-    if len(text) <= max_chars:
-        return text
-    return text[: max_chars - 3].rstrip() + "..."
-
-
-def write_horizontal_bar_chart(
-    path: Path,
-    title: str,
-    subtitle: str,
-    rows: list[dict[str, Any]],
-    x_axis_label: str,
-    footer: str,
-    bar_color: str,
-    notes: list[str] | None = None,
-) -> None:
-    width = 1200
-    margin_left = 330
-    margin_right = 230
-    margin_top = 142
-    row_height = 36
-    bar_height = 22
-    footer_lines = list(notes or []) + [footer]
-    footer_height = 44 + 18 * len(footer_lines)
-    plot_width = width - margin_left - margin_right
-    chart_rows = rows if rows else [{"label": "Nessun dato", "value": 0, "value_label": ""}]
-    height = margin_top + len(chart_rows) * row_height + footer_height
-
-    max_value = max(float(row["value"]) for row in chart_rows)
-    axis_max = max_value if max_value > 0 else 1.0
-
-    svg: list[str] = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        (
-            f'<svg xmlns="http://www.w3.org/2000/svg" '
-            f'width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
-        ),
-        '<rect width="100%" height="100%" fill="#ffffff"/>',
-        (
-            '<style>'
-            '.title{font:700 28px Arial,sans-serif;fill:#1f2933}'
-            '.subtitle{font:400 15px Arial,sans-serif;fill:#52616b}'
-            '.axis{font:400 12px Arial,sans-serif;fill:#697985}'
-            '.label{font:600 14px Arial,sans-serif;fill:#1f2933}'
-            '.value{font:600 13px Arial,sans-serif;fill:#1f2933}'
-            '.footer{font:400 12px Arial,sans-serif;fill:#697985}'
-            '</style>'
-        ),
-        f'<text x="36" y="42" class="title">{html_escape(title)}</text>',
-        f'<text x="36" y="70" class="subtitle">{html_escape(subtitle)}</text>',
-    ]
-
-    axis_y = margin_top - 22
-    axis_label_y = axis_y - 32
-    tick_label_y = axis_y - 8
-    if x_axis_label:
-        svg.append(
-            f'<text x="{margin_left}" y="{axis_label_y}" class="axis">'
-            f'{html_escape(x_axis_label)}</text>'
-        )
-    for tick in range(5):
-        fraction = tick / 4
-        x_pos = margin_left + fraction * plot_width
-        tick_value = axis_max * fraction
-        tick_label = format_rate_it(tick_value) if axis_max < 10 else format_int_it(round(tick_value))
-        svg.append(
-            f'<line x1="{x_pos:.1f}" y1="{axis_y}" x2="{x_pos:.1f}" '
-            f'y2="{height - footer_height + 8}" stroke="#e4e9ed" stroke-width="1"/>'
-        )
-        svg.append(
-            f'<text x="{x_pos:.1f}" y="{tick_label_y}" class="axis" '
-            f'text-anchor="middle">{html_escape(tick_label)}</text>'
-        )
-
-    for index, row in enumerate(chart_rows):
-        y_center = margin_top + index * row_height + row_height / 2
-        value = float(row["value"])
-        bar_width = (value / axis_max) * plot_width if axis_max else 0
-        label = truncate_label(row["label"])
-        value_label = str(row.get("value_label", ""))
-
-        svg.append(
-            f'<text x="{margin_left - 18}" y="{y_center + 5:.1f}" '
-            f'class="label" text-anchor="end">{html_escape(label)}</text>'
-        )
-        svg.append(
-            f'<rect x="{margin_left}" y="{y_center - bar_height / 2:.1f}" '
-            f'width="{bar_width:.1f}" height="{bar_height}" rx="3" fill="{bar_color}"/>'
-        )
-        svg.append(
-            f'<text x="{margin_left + bar_width + 10:.1f}" y="{y_center + 5:.1f}" '
-            f'class="value">{html_escape(value_label)}</text>'
-        )
-
-    if max_value == 0:
-        svg.append(
-            f'<text x="{margin_left}" y="{margin_top + 50}" class="subtitle">'
-            'Nessun kebab conteggiato con la soglia impostata.</text>'
-        )
-
-    footer_separator_y = height - footer_height + 24
-    footer_first_line_y = footer_separator_y + 22
-    svg.append(
-        f'<line x1="36" y1="{footer_separator_y}" x2="{width - 36}" '
-        f'y2="{footer_separator_y}" stroke="#e4e9ed" stroke-width="1"/>'
-    )
-    for line_index, line in enumerate(footer_lines):
-        line_y = footer_first_line_y + line_index * 18
-        svg.append(f'<text x="36" y="{line_y}" class="footer">{html_escape(line)}</text>')
-    svg.append("</svg>")
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(svg), encoding="utf-8")
-
-
-def chart_footer(year: int, extra_poi_csv: list[Path]) -> str:
-    sources = [
-        "OpenStreetMap/Overpass",
-        f"ISTAT Demo POSAS {year}",
-        f"ISTAT confini amministrativi {year}",
-    ]
-    if extra_poi_csv:
-        sources.append("CSV esterni indicati dall'utente")
-    return "Fonti: " + "; ".join(sources) + ". Elaborazione di Nazareno Lecis"
-
-
-def write_charts(
-    out_dir: Path,
-    comune_rows: list[dict[str, Any]],
-    province_rows: list[dict[str, Any]],
-    year: int,
-    extra_poi_csv: list[Path],
-    include_broad_keywords: bool,
-    min_confidence: str,
-    chart_top_n: int,
-) -> None:
-    footer = chart_footer(year, extra_poi_csv)
-    method = "OSM"
-    if extra_poi_csv:
-        method += " + CSV esterni"
-    if include_broad_keywords:
-        method += " con keyword larghe"
-    note_base = (
-        f"Note: stima {method}; popolazione ISTAT {year}; "
-        f"soglia conteggio {min_confidence}+."
-    )
-    note_ristoranti = (
-        "Denominatore ristoranti OSM: amenity=restaurant, fast_food, food_court."
-    )
-
-    province_chart_rows = []
-    for row in sorted(province_rows, key=lambda item: parse_rate(item["kebabbari_per_1000"]), reverse=True):
-        rate = parse_rate(row["kebabbari_per_1000"])
-        province_chart_rows.append(
-            {
-                "label": row["provincia"],
-                "value": rate,
-                "value_label": (
-                    f"{format_rate_it(rate)} per 1.000 | "
-                    f"{format_int_it(row['kebabbari'])} locali"
-                ),
-            }
-        )
-
-    write_horizontal_bar_chart(
-        out_dir / "grafico_province_per_1000.svg",
-        "Kebabbari per 1.000 abitanti - province Marche",
-        "Kebabbari per 1.000 abitanti",
-        province_chart_rows,
-        "",
-        footer,
-        "#2a9d8f",
-        notes=[note_base],
-    )
-
-    province_restaurant_chart_rows = []
-    for row in sorted(
-        province_rows,
-        key=lambda item: parse_rate(item["kebabbari_per_100_ristoranti"]),
-        reverse=True,
-    ):
-        rate = parse_rate(row["kebabbari_per_100_ristoranti"])
-        province_restaurant_chart_rows.append(
-            {
-                "label": row["provincia"],
-                "value": rate,
-                "value_label": (
-                    f"{format_rate_it(rate)} per 100 ristoranti | "
-                    f"{format_int_it(row['kebabbari'])}/{format_int_it(row['ristoranti_osm'])}"
-                ),
-            }
-        )
-
-    write_horizontal_bar_chart(
-        out_dir / "grafico_province_per_100_ristoranti.svg",
-        "Kebabbari per 100 ristoranti - province Marche",
-        "Kebabbari per 100 ristoranti OSM",
-        province_restaurant_chart_rows,
-        "",
-        footer,
-        "#6d597a",
-        notes=[note_base, note_ristoranti],
-    )
-
-    comuni_with_kebab = [row for row in comune_rows if int(row["kebabbari"]) > 0]
-    top_count_rows = []
-    for row in sorted(
-        comuni_with_kebab,
-        key=lambda item: (int(item["kebabbari"]), parse_rate(item["kebabbari_per_1000"])),
-        reverse=True,
-    )[:chart_top_n]:
-        rate = parse_rate(row["kebabbari_per_1000"])
-        top_count_rows.append(
-            {
-                "label": f"{row['comune']} ({row['provincia']})",
-                "value": int(row["kebabbari"]),
-                "value_label": (
-                    f"{format_int_it(row['kebabbari'])} locali | "
-                    f"{format_rate_it(rate)} per 1.000"
-                ),
-            }
-        )
-
-    write_horizontal_bar_chart(
-        out_dir / "grafico_comuni_per_numero.svg",
-        "Comuni con piu' kebabbari censiti",
-        "Numero di kebabbari censiti",
-        top_count_rows,
-        "",
-        footer,
-        "#e76f51",
-        notes=[note_base],
-    )
-
-    top_rate_rows = []
-    for row in sorted(
-        comuni_with_kebab,
-        key=lambda item: (parse_rate(item["kebabbari_per_1000"]), int(item["kebabbari"])),
-        reverse=True,
-    )[:chart_top_n]:
-        rate = parse_rate(row["kebabbari_per_1000"])
-        top_rate_rows.append(
-            {
-                "label": f"{row['comune']} ({row['provincia']})",
-                "value": rate,
-                "value_label": (
-                    f"{format_rate_it(rate)} per 1.000 | "
-                    f"{format_int_it(row['kebabbari'])} locali"
-                ),
-            }
-        )
-
-    write_horizontal_bar_chart(
-        out_dir / "grafico_comuni_per_1000.svg",
-        "Comuni con tasso piu' alto",
-        "Kebabbari per 1.000 abitanti",
-        top_rate_rows,
-        "",
-        footer,
-        "#457b9d",
-        notes=[note_base, "Sono inclusi solo i comuni con almeno 1 kebab censito."],
-    )
-
-    top_restaurant_rate_rows = []
-    for row in sorted(
-        comuni_with_kebab,
-        key=lambda item: (
-            parse_rate(item["kebabbari_per_100_ristoranti"]),
-            int(item["kebabbari"]),
-        ),
-        reverse=True,
-    )[:chart_top_n]:
-        rate = parse_rate(row["kebabbari_per_100_ristoranti"])
-        top_restaurant_rate_rows.append(
-            {
-                "label": f"{row['comune']} ({row['provincia']})",
-                "value": rate,
-                "value_label": (
-                    f"{format_rate_it(rate)} per 100 ristoranti | "
-                    f"{format_int_it(row['kebabbari'])}/{format_int_it(row['ristoranti_osm'])}"
-                ),
-            }
-        )
-
-    write_horizontal_bar_chart(
-        out_dir / "grafico_comuni_per_100_ristoranti.svg",
-        "Comuni con piu' kebabbari rispetto ai ristoranti",
-        "Kebabbari per 100 ristoranti OSM",
-        top_restaurant_rate_rows,
-        "",
-        footer,
-        "#bc6c25",
-        notes=[
-            note_base,
-            note_ristoranti,
-            "Sono inclusi solo i comuni con almeno 1 kebab censito.",
-        ],
-    )
-
-
-def write_outputs(
-    out_dir: Path,
-    pois: list[dict[str, Any]],
-    ristorazione_pois: list[dict[str, Any]],
-    comune_rows: list[dict[str, Any]],
-    province_rows: list[dict[str, Any]],
-    region_row: dict[str, Any],
-    year: int,
-    include_broad_keywords: bool,
-    min_confidence: str,
-    dedupe_distance_meters: float,
-    overpass_url: str,
-    extra_poi_csv: list[Path],
-    tipo_output: str,
-    chart_top_n: int,
-) -> None:
-    scrivi_csv = deve_scrivere_csv(tipo_output)
-    scrivi_grafici = deve_scrivere_grafici(tipo_output)
-
-    poi_fields = [
-        "name",
-        "source",
-        "source_id",
-        "osm_type",
-        "osm_id",
-        "lat",
-        "lon",
-        "confidence",
-        "matched_terms",
-        "amenity",
-        "cuisine",
-        "addr_street",
-        "addr_housenumber",
-        "addr_city",
-        "phone",
-        "website",
-        "codice_comune",
-        "comune",
-        "codice_provincia",
-        "provincia",
-        "raw_tags_json",
-    ]
-    ristorazione_fields = [
-        "name",
-        "source",
-        "source_id",
-        "osm_type",
-        "osm_id",
-        "lat",
-        "lon",
-        "amenity",
-        "cuisine",
-        "codice_comune",
-        "comune",
-        "codice_provincia",
-        "provincia",
-        "raw_tags_json",
-    ]
-    summary_fields = [
-        "codice_comune",
-        "comune",
-        "codice_provincia",
-        "provincia",
-        "popolazione",
-        "kebabbari",
-        "kebabbari_per_1000",
-        "ristoranti_osm",
-        "kebabbari_per_100_ristoranti",
-    ]
-    province_fields = [
-        "codice_provincia",
-        "provincia",
-        "popolazione",
-        "kebabbari",
-        "kebabbari_per_1000",
-        "ristoranti_osm",
-        "kebabbari_per_100_ristoranti",
-    ]
-
-    pois_sorted = sorted(
-        pois,
-        key=lambda poi: (
-            str(poi.get("codice_provincia", "")),
-            str(poi.get("comune", "")),
-            normalize_text(poi.get("name", "")),
-        ),
-    )
-
-    if scrivi_csv:
-        write_csv(out_dir / "kebabbari_marche.csv", pois_sorted, poi_fields)
-        write_csv(
-            out_dir / "ristorazione_osm_marche.csv",
-            sorted(
-                ristorazione_pois,
-                key=lambda poi: (
-                    str(poi.get("codice_provincia", "")),
-                    str(poi.get("comune", "")),
-                    normalize_text(poi.get("name", "")),
-                ),
-            ),
-            ristorazione_fields,
-        )
-        write_csv(out_dir / "distribuzione_kebabbari_comuni.csv", comune_rows, summary_fields)
-        write_csv(out_dir / "distribuzione_kebabbari_province.csv", province_rows, province_fields)
-        write_csv(out_dir / "distribuzione_kebabbari_regione.csv", [region_row], list(region_row.keys()))
-
-        unassigned = [poi for poi in pois if not poi.get("codice_comune")]
-        unassigned_path = out_dir / "kebabbari_non_assegnati.csv"
-        if unassigned:
-            write_csv(unassigned_path, unassigned, poi_fields)
-        elif unassigned_path.exists():
-            unassigned_path.unlink()
-
-        metadata = {
-            "created_at": dt.datetime.now().isoformat(timespec="seconds"),
-            "region": REGION_NAME,
-            "population_year": year,
-            "boundary_year": year,
-            "osm_include_broad_keywords": include_broad_keywords,
-            "min_confidence_counted": min_confidence,
-            "dedupe_distance_meters": dedupe_distance_meters,
-            "overpass_url": overpass_url,
-            "tipo_output": tipo_output,
-            "note": (
-                "Kebabbaro is not an official statistical category. "
-                "Counts are an operational estimate from the configured sources. "
-                "The restaurant denominator is based on OSM amenities: restaurant, fast_food, food_court."
-            ),
-        }
-        (out_dir / "metadati.json").write_text(
-            json.dumps(metadata, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    if scrivi_grafici:
-        write_charts(
-            out_dir,
-            comune_rows,
-            province_rows,
-            year,
-            extra_poi_csv,
-            include_broad_keywords,
-            min_confidence,
-            chart_top_n,
-        )
-
-
-def esegui_analisi(
-    year: int,
-    cache_dir: Path,
-    out_dir: Path,
-    refresh: bool,
-    include_broad_keywords: bool,
-    extra_poi_csv: list[Path],
-    min_confidence: str,
-    dedupe_distance_meters: float,
-    tipo_output: str,
-    chart_top_n: int,
-    overpass_url: str,
-) -> dict[str, Any]:
-    start = time.time()
-    tipo_output = normalizza_tipo_output(tipo_output)
-    scrivi_csv = deve_scrivere_csv(tipo_output)
-    scrivi_grafici = deve_scrivere_grafici(tipo_output)
-
-    print(f"Regione: {REGION_NAME}")
-    print(f"Anno ISTAT: {year}")
-    print(f"Output richiesto: {tipo_output}")
-
-    population = load_population(year, cache_dir, refresh)
-    comuni = load_comune_shapes(year, cache_dir, refresh)
-    osm_pois = load_osm_pois(
-        cache_dir,
-        refresh,
-        include_broad_keywords,
-        overpass_url,
-    )
-    ristorazione_pois = load_osm_ristorazione_pois(cache_dir, refresh, overpass_url)
-    extra_pois = load_extra_pois(extra_poi_csv)
-
-    pois = dedupe_pois(osm_pois + extra_pois, dedupe_distance_meters)
-    assign_comuni_to_pois(pois, comuni, population)
-    assign_comuni_to_pois(ristorazione_pois, comuni, population)
-
-    comune_rows, province_rows, region_row = build_summary_rows(
-        population,
-        pois,
-        ristorazione_pois,
-        min_confidence,
-    )
-
-    write_outputs(
-        out_dir,
-        pois,
-        ristorazione_pois,
-        comune_rows,
-        province_rows,
-        region_row,
-        year,
-        include_broad_keywords,
-        min_confidence,
-        dedupe_distance_meters,
-        overpass_url,
-        extra_poi_csv,
-        tipo_output,
-        chart_top_n,
-    )
-
-    print("")
-    print("Output:")
-    if scrivi_csv:
-        print(f"- {out_dir / 'kebabbari_marche.csv'}")
-        print(f"- {out_dir / 'ristorazione_osm_marche.csv'}")
-        print(f"- {out_dir / 'distribuzione_kebabbari_comuni.csv'}")
-        print(f"- {out_dir / 'distribuzione_kebabbari_province.csv'}")
-        print(f"- {out_dir / 'distribuzione_kebabbari_regione.csv'}")
-    if scrivi_grafici:
-        print(f"- {out_dir / 'grafico_province_per_1000.svg'}")
-        print(f"- {out_dir / 'grafico_province_per_100_ristoranti.svg'}")
-        print(f"- {out_dir / 'grafico_comuni_per_numero.svg'}")
-        print(f"- {out_dir / 'grafico_comuni_per_1000.svg'}")
-        print(f"- {out_dir / 'grafico_comuni_per_100_ristoranti.svg'}")
-    print("")
-    print(
-        f"Totale conteggiato ({min_confidence}+): "
-        f"{region_row['kebabbari']} kebabbari, "
-        f"{region_row['kebabbari_per_1000']} per 1.000 abitanti, "
-        f"{region_row['kebabbari_per_100_ristoranti']} per 100 ristoranti OSM."
-    )
-    print(f"Tempo: {time.time() - start:.1f}s")
-    return {
-        "pois": pois,
-        "ristorazione_pois": ristorazione_pois,
-        "comuni": comune_rows,
-        "province": province_rows,
-        "regione": region_row,
-    }
