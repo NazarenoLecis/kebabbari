@@ -7,7 +7,7 @@ Il progetto usa:
 - OpenStreetMap/Overpass per individuare i punti kebab;
 - ISTAT Demo POSAS per la popolazione comunale;
 - ISTAT confini amministrativi per assegnare ogni punto al comune;
-- OpenStreetMap per il denominatore dei punti di ristorazione.
+- OpenStreetMap per i denominatori dei punti di ristorazione e delle pizzerie.
 
 ## Struttura
 
@@ -41,9 +41,11 @@ Lo script puo' generare:
 
 - CSV con elenco kebabbari;
 - CSV con punti OSM di ristorazione;
+- CSV con pizzerie OSM;
 - distribuzione per comune, provincia e regione;
 - grafici PNG con rapporto kebabbari/popolazione;
-- grafici PNG con rapporto kebabbari/ristoranti.
+- grafici PNG con rapporto kebabbari/ristoranti;
+- grafici PNG con rapporto kebabbari/pizzerie.
 
 Gli output sono separati in:
 
@@ -61,5 +63,7 @@ Il rapporto con i ristoranti usa come denominatore i punti OpenStreetMap con:
 - `amenity=restaurant`
 - `amenity=fast_food`
 - `amenity=food_court`
+
+Il rapporto con le pizzerie usa come denominatore i punti OpenStreetMap con gli stessi valori `amenity` e un riferimento a `pizza` o `pizzeria` in `cuisine`, `name`, `brand` o `operator`.
 
 Le fonti e la dicitura `Elaborazione di Nazareno Lecis` sono riportate nei grafici generati.

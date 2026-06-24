@@ -22,6 +22,7 @@ from marche_kebab_utils import (
     load_comune_shapes,
     load_extra_pois,
     load_osm_pois,
+    load_osm_pizzerie_pois,
     load_osm_ristorazione_pois,
     load_population,
     normalize_text,
@@ -70,6 +71,7 @@ def write_outputs(
     chart_dir: Path,
     pois: list[dict[str, Any]],
     ristorazione_pois: list[dict[str, Any]],
+    pizzerie_pois: list[dict[str, Any]],
     comune_rows: list[dict[str, Any]],
     province_rows: list[dict[str, Any]],
     region_row: dict[str, Any],
@@ -124,6 +126,7 @@ def write_outputs(
         "provincia",
         "raw_tags_json",
     ]
+    pizzeria_fields = list(ristorazione_fields)
     summary_fields = [
         "codice_comune",
         "comune",
@@ -134,6 +137,8 @@ def write_outputs(
         "kebabbari_per_1000",
         "ristoranti_osm",
         "kebabbari_per_100_ristoranti",
+        "pizzerie_osm",
+        "kebabbari_per_100_pizzerie",
     ]
     province_fields = [
         "codice_provincia",
@@ -143,6 +148,8 @@ def write_outputs(
         "kebabbari_per_1000",
         "ristoranti_osm",
         "kebabbari_per_100_ristoranti",
+        "pizzerie_osm",
+        "kebabbari_per_100_pizzerie",
     ]
 
     pois_sorted = sorted(
@@ -168,6 +175,18 @@ def write_outputs(
             ),
             ristorazione_fields,
         )
+        write_csv(
+            file_dir / "pizzerie_osm_marche.csv",
+            sorted(
+                pizzerie_pois,
+                key=lambda poi: (
+                    str(poi.get("codice_provincia", "")),
+                    str(poi.get("comune", "")),
+                    normalize_text(poi.get("name", "")),
+                ),
+            ),
+            pizzeria_fields,
+        )
         write_csv(file_dir / "distribuzione_kebabbari_comuni.csv", comune_rows, summary_fields)
         write_csv(file_dir / "distribuzione_kebabbari_province.csv", province_rows, province_fields)
         write_csv(file_dir / "distribuzione_kebabbari_regione.csv", [region_row], list(region_row.keys()))
@@ -192,7 +211,8 @@ def write_outputs(
             "note": (
                 "Kebabbaro is not an official statistical category. "
                 "Counts are an operational estimate from the configured sources. "
-                "The restaurant denominator is based on OSM amenities: restaurant, fast_food, food_court."
+                "The restaurant denominator is based on OSM amenities: restaurant, fast_food, food_court. "
+                "The pizzeria denominator is based on OSM food amenities with pizza/pizzeria in cuisine, name, brand or operator."
             ),
         }
         (file_dir / "metadati.json").write_text(
@@ -245,16 +265,19 @@ def esegui_analisi(
         overpass_url,
     )
     ristorazione_pois = load_osm_ristorazione_pois(cache_dir, refresh, overpass_url)
+    pizzerie_pois = load_osm_pizzerie_pois(cache_dir, refresh, overpass_url)
     extra_pois = load_extra_pois(extra_poi_csv)
 
     pois = dedupe_pois(osm_pois + extra_pois, dedupe_distance_meters)
     assign_comuni_to_pois(pois, comuni, population)
     assign_comuni_to_pois(ristorazione_pois, comuni, population)
+    assign_comuni_to_pois(pizzerie_pois, comuni, population)
 
     comune_rows, province_rows, region_row = build_summary_rows(
         population,
         pois,
         ristorazione_pois,
+        pizzerie_pois,
         min_confidence,
     )
 
@@ -263,6 +286,7 @@ def esegui_analisi(
         chart_dir,
         pois,
         ristorazione_pois,
+        pizzerie_pois,
         comune_rows,
         province_rows,
         region_row,
@@ -281,26 +305,31 @@ def esegui_analisi(
     if scrivi_csv:
         print(f"- {file_dir / 'kebabbari_marche.csv'}")
         print(f"- {file_dir / 'ristorazione_osm_marche.csv'}")
+        print(f"- {file_dir / 'pizzerie_osm_marche.csv'}")
         print(f"- {file_dir / 'distribuzione_kebabbari_comuni.csv'}")
         print(f"- {file_dir / 'distribuzione_kebabbari_province.csv'}")
         print(f"- {file_dir / 'distribuzione_kebabbari_regione.csv'}")
     if scrivi_grafici:
         print(f"- {chart_dir / 'grafico_province_per_1000.png'}")
         print(f"- {chart_dir / 'grafico_province_per_100_ristoranti.png'}")
+        print(f"- {chart_dir / 'grafico_province_per_100_pizzerie.png'}")
         print(f"- {chart_dir / 'grafico_comuni_per_numero.png'}")
         print(f"- {chart_dir / 'grafico_comuni_per_1000.png'}")
         print(f"- {chart_dir / 'grafico_comuni_per_100_ristoranti.png'}")
+        print(f"- {chart_dir / 'grafico_comuni_per_100_pizzerie.png'}")
     print("")
     print(
         f"Totale conteggiato ({min_confidence}+): "
         f"{region_row['kebabbari']} kebabbari, "
         f"{region_row['kebabbari_per_1000']} per 1.000 abitanti, "
-        f"{region_row['kebabbari_per_100_ristoranti']} per 100 ristoranti OSM."
+        f"{region_row['kebabbari_per_100_ristoranti']} per 100 ristoranti OSM, "
+        f"{region_row['kebabbari_per_100_pizzerie']} per 100 pizzerie OSM."
     )
     print(f"Tempo: {time.time() - start:.1f}s")
     return {
         "pois": pois,
         "ristorazione_pois": ristorazione_pois,
+        "pizzerie_pois": pizzerie_pois,
         "comuni": comune_rows,
         "province": province_rows,
         "regione": region_row,

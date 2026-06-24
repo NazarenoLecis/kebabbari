@@ -12,7 +12,7 @@ Arricchimenti opzionali:
   Il CSV deve avere almeno name e coordinate lat/lon, oppure un codice_comune.
 
 Questo file contiene funzioni di supporto.
-La configurazione resta in marche_kebab_density.py.
+La configurazione resta in marche_kebab_runner.py.
 """
 
 from __future__ import annotations
@@ -62,6 +62,7 @@ BROAD_OVERPASS_REGEX = r"istanbul|anatolia|turkish"
 
 FOOD_AMENITY_REGEX = r"^(fast_food|restaurant|food_court|cafe|bar)$"
 RISTORAZIONE_AMENITY_REGEX = r"^(restaurant|fast_food|food_court)$"
+PIZZERIA_OVERPASS_REGEX = r"pizza|pizzeria"
 
 CONFIDENCE_RANK = {
     "high": 3,
@@ -407,6 +408,43 @@ def fetch_osm_ristorazione_payload(
     return json.loads(payload.decode("utf-8"))
 
 
+def build_pizzerie_overpass_query() -> str:
+    return f"""
+[out:json][timeout:90];
+area["boundary"="administrative"]["admin_level"="4"]["ISO3166-2"="IT-57"]->.searchArea;
+(
+  nwr["amenity"~"{RISTORAZIONE_AMENITY_REGEX}"]["cuisine"~"{PIZZERIA_OVERPASS_REGEX}", i](area.searchArea);
+  nwr["amenity"~"{RISTORAZIONE_AMENITY_REGEX}"]["name"~"{PIZZERIA_OVERPASS_REGEX}", i](area.searchArea);
+  nwr["amenity"~"{RISTORAZIONE_AMENITY_REGEX}"]["brand"~"{PIZZERIA_OVERPASS_REGEX}", i](area.searchArea);
+  nwr["amenity"~"{RISTORAZIONE_AMENITY_REGEX}"]["operator"~"{PIZZERIA_OVERPASS_REGEX}", i](area.searchArea);
+);
+out center tags;
+""".strip()
+
+
+def fetch_osm_pizzerie_payload(
+    cache_dir: Path,
+    refresh: bool,
+    overpass_url: str,
+) -> dict[str, Any]:
+    cache_path = cache_dir / "osm_pizzerie_marche.json"
+    if cache_path.exists() and not refresh:
+        return json.loads(cache_path.read_text(encoding="utf-8"))
+
+    query = build_pizzerie_overpass_query()
+    body = urllib.parse.urlencode({"data": query}).encode("utf-8")
+    print("Download: OpenStreetMap pizzerie via Overpass")
+    payload = make_request(
+        overpass_url,
+        data=body,
+        timeout=180,
+        content_type="application/x-www-form-urlencoded; charset=utf-8",
+    )
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_bytes(payload)
+    return json.loads(payload.decode("utf-8"))
+
+
 def matched_terms(text: str, include_broad_keywords: bool) -> list[str]:
     terms = list(STRICT_TERMS)
     if include_broad_keywords:
@@ -513,6 +551,18 @@ def osm_element_to_ristorazione_poi(element: dict[str, Any]) -> dict[str, Any] |
     }
 
 
+def is_pizzeria_element(element: dict[str, Any]) -> bool:
+    tags = element.get("tags") or {}
+    searchable_values = [
+        tags.get("cuisine"),
+        tags.get("name"),
+        tags.get("brand"),
+        tags.get("operator"),
+    ]
+    searchable_text = normalize_text(" ".join(str(value or "") for value in searchable_values))
+    return "pizza" in searchable_text or "pizzeria" in searchable_text
+
+
 def load_osm_pois(
     cache_dir: Path,
     refresh: bool,
@@ -536,6 +586,22 @@ def load_osm_ristorazione_pois(
     payload = fetch_osm_ristorazione_payload(cache_dir, refresh, overpass_url)
     pois_by_id: dict[str, dict[str, Any]] = {}
     for element in payload.get("elements", []):
+        poi = osm_element_to_ristorazione_poi(element)
+        if poi:
+            pois_by_id[poi["source_id"]] = poi
+    return list(pois_by_id.values())
+
+
+def load_osm_pizzerie_pois(
+    cache_dir: Path,
+    refresh: bool,
+    overpass_url: str,
+) -> list[dict[str, Any]]:
+    payload = fetch_osm_pizzerie_payload(cache_dir, refresh, overpass_url)
+    pois_by_id: dict[str, dict[str, Any]] = {}
+    for element in payload.get("elements", []):
+        if not is_pizzeria_element(element):
+            continue
         poi = osm_element_to_ristorazione_poi(element)
         if poi:
             pois_by_id[poi["source_id"]] = poi
@@ -822,6 +888,7 @@ def build_summary_rows(
     population: dict[str, dict[str, Any]],
     pois: list[dict[str, Any]],
     ristorazione_pois: list[dict[str, Any]],
+    pizzerie_pois: list[dict[str, Any]],
     min_confidence: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     threshold = confidence_threshold(min_confidence)
@@ -835,6 +902,9 @@ def build_summary_rows(
     ristoranti_by_comune = Counter(
         str(poi["codice_comune"]) for poi in ristorazione_pois if poi.get("codice_comune")
     )
+    pizzerie_by_comune = Counter(
+        str(poi["codice_comune"]) for poi in pizzerie_pois if poi.get("codice_comune")
+    )
 
     comune_rows: list[dict[str, Any]] = []
     for code, info in sorted(
@@ -844,8 +914,10 @@ def build_summary_rows(
         population_value = int(info["popolazione"])
         count = counts_by_comune.get(code, 0)
         ristoranti = ristoranti_by_comune.get(code, 0)
+        pizzerie = pizzerie_by_comune.get(code, 0)
         rate_population = count / population_value * 1000 if population_value else 0
         rate_ristoranti = count / ristoranti * 100 if ristoranti else 0
+        rate_pizzerie = count / pizzerie * 100 if pizzerie else 0
         comune_rows.append(
             {
                 "codice_comune": code,
@@ -857,6 +929,8 @@ def build_summary_rows(
                 "kebabbari_per_1000": f"{rate_population:.4f}",
                 "ristoranti_osm": ristoranti,
                 "kebabbari_per_100_ristoranti": f"{rate_ristoranti:.4f}",
+                "pizzerie_osm": pizzerie,
+                "kebabbari_per_100_pizzerie": f"{rate_pizzerie:.4f}",
             }
         )
 
@@ -871,11 +945,13 @@ def build_summary_rows(
                 "popolazione": 0,
                 "kebabbari": 0,
                 "ristoranti_osm": 0,
+                "pizzerie_osm": 0,
             },
         )
         target["popolazione"] += int(row["popolazione"])
         target["kebabbari"] += int(row["kebabbari"])
         target["ristoranti_osm"] += int(row["ristoranti_osm"])
+        target["pizzerie_osm"] += int(row["pizzerie_osm"])
 
     province_rows = []
     for row in sorted(province_totals.values(), key=lambda item: item["codice_provincia"]):
@@ -883,18 +959,24 @@ def build_summary_rows(
         rate_ristoranti = (
             row["kebabbari"] / row["ristoranti_osm"] * 100 if row["ristoranti_osm"] else 0
         )
+        rate_pizzerie = (
+            row["kebabbari"] / row["pizzerie_osm"] * 100 if row["pizzerie_osm"] else 0
+        )
         row = dict(row)
         row["kebabbari_per_1000"] = f"{rate_population:.4f}"
         row["kebabbari_per_100_ristoranti"] = f"{rate_ristoranti:.4f}"
+        row["kebabbari_per_100_pizzerie"] = f"{rate_pizzerie:.4f}"
         province_rows.append(row)
 
     region_population = sum(int(row["popolazione"]) for row in comune_rows)
     region_count = sum(int(row["kebabbari"]) for row in comune_rows)
     region_ristoranti = sum(int(row["ristoranti_osm"]) for row in comune_rows)
+    region_pizzerie = sum(int(row["pizzerie_osm"]) for row in comune_rows)
     region_rate = region_count / region_population * 1000 if region_population else 0
     region_rate_ristoranti = (
         region_count / region_ristoranti * 100 if region_ristoranti else 0
     )
+    region_rate_pizzerie = region_count / region_pizzerie * 100 if region_pizzerie else 0
     region_row = {
         "regione": REGION_NAME,
         "popolazione": region_population,
@@ -902,6 +984,8 @@ def build_summary_rows(
         "kebabbari_per_1000": f"{region_rate:.4f}",
         "ristoranti_osm": region_ristoranti,
         "kebabbari_per_100_ristoranti": f"{region_rate_ristoranti:.4f}",
+        "pizzerie_osm": region_pizzerie,
+        "kebabbari_per_100_pizzerie": f"{region_rate_pizzerie:.4f}",
     }
 
     return comune_rows, province_rows, region_row

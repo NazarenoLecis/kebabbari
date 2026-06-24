@@ -226,6 +226,9 @@ def write_charts(
     note_ristoranti = (
         "Denominatore ristoranti OSM: amenity=restaurant, fast_food, food_court."
     )
+    note_pizzerie = (
+        "Denominatore pizzerie OSM: ristorazione OSM con cuisine/nome/brand/operator pizza o pizzeria."
+    )
 
     province_chart_rows = []
     for row in sorted(province_rows, key=lambda item: parse_rate(item["kebabbari_per_1000"]), reverse=True):
@@ -279,6 +282,35 @@ def write_charts(
         footer,
         "#6d597a",
         notes=[note_base, note_ristoranti],
+    )
+
+    province_pizzeria_chart_rows = []
+    for row in sorted(
+        province_rows,
+        key=lambda item: parse_rate(item["kebabbari_per_100_pizzerie"]),
+        reverse=True,
+    ):
+        rate = parse_rate(row["kebabbari_per_100_pizzerie"])
+        province_pizzeria_chart_rows.append(
+            {
+                "label": row["provincia"],
+                "value": rate,
+                "value_label": (
+                    f"{format_rate_it(rate)} per 100 pizzerie | "
+                    f"{format_int_it(row['kebabbari'])}/{format_int_it(row['pizzerie_osm'])}"
+                ),
+            }
+        )
+
+    write_horizontal_bar_chart(
+        out_dir / "grafico_province_per_100_pizzerie.png",
+        "Kebabbari per 100 pizzerie - province Marche",
+        "Kebabbari per 100 pizzerie OSM",
+        province_pizzeria_chart_rows,
+        "",
+        footer,
+        "#4d908e",
+        notes=[note_base, note_pizzerie],
     )
 
     comuni_with_kebab = [row for row in comune_rows if int(row["kebabbari"]) > 0]
@@ -373,5 +405,44 @@ def write_charts(
             note_base,
             note_ristoranti,
             "Sono inclusi solo i comuni con almeno 1 kebab censito.",
+        ],
+    )
+
+    comuni_with_kebab_and_pizzerie = [
+        row for row in comuni_with_kebab if int(row["pizzerie_osm"]) > 0
+    ]
+    top_pizzeria_rate_rows = []
+    for row in sorted(
+        comuni_with_kebab_and_pizzerie,
+        key=lambda item: (
+            parse_rate(item["kebabbari_per_100_pizzerie"]),
+            int(item["kebabbari"]),
+        ),
+        reverse=True,
+    )[:chart_top_n]:
+        rate = parse_rate(row["kebabbari_per_100_pizzerie"])
+        top_pizzeria_rate_rows.append(
+            {
+                "label": f"{row['comune']} ({row['provincia']})",
+                "value": rate,
+                "value_label": (
+                    f"{format_rate_it(rate)} per 100 pizzerie | "
+                    f"{format_int_it(row['kebabbari'])}/{format_int_it(row['pizzerie_osm'])}"
+                ),
+            }
+        )
+
+    write_horizontal_bar_chart(
+        out_dir / "grafico_comuni_per_100_pizzerie.png",
+        "Comuni con piu' kebabbari rispetto alle pizzerie",
+        "Kebabbari per 100 pizzerie OSM",
+        top_pizzeria_rate_rows,
+        "",
+        footer,
+        "#588157",
+        notes=[
+            note_base,
+            note_pizzerie,
+            "Sono inclusi solo i comuni con almeno 1 kebab e almeno 1 pizzeria OSM.",
         ],
     )
