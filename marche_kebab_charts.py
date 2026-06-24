@@ -1,12 +1,18 @@
 """
-Funzioni per generare grafici SVG dell'analisi kebabbari.
+Funzioni per generare grafici PNG dell'analisi kebabbari.
 """
 
 from __future__ import annotations
 
-from html import escape as html_escape
 from pathlib import Path
 from typing import Any
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError as exc:
+    raise RuntimeError(
+        "Per generare i grafici PNG installa Pillow con: py -m pip install pillow"
+    ) from exc
 
 
 def format_int_it(value: Any) -> str:
@@ -21,11 +27,54 @@ def parse_rate(value: Any) -> float:
     return float(str(value).replace(",", "."))
 
 
-def truncate_label(value: Any, max_chars: int = 38) -> str:
+def load_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
+    candidates = [
+        "arialbd.ttf" if bold else "arial.ttf",
+        "segoeuib.ttf" if bold else "segoeui.ttf",
+        "calibrib.ttf" if bold else "calibri.ttf",
+    ]
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+TITLE_FONT = load_font(28, bold=True)
+SUBTITLE_FONT = load_font(15)
+AXIS_FONT = load_font(12)
+LABEL_FONT = load_font(14, bold=True)
+VALUE_FONT = load_font(13, bold=True)
+FOOTER_FONT = load_font(12)
+
+
+def text_size(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont) -> tuple[int, int]:
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    return right - left, bottom - top
+
+
+def truncate_label(
+    draw: ImageDraw.ImageDraw,
+    value: Any,
+    font: ImageFont.ImageFont,
+    max_width: int,
+) -> str:
     text = str(value)
-    if len(text) <= max_chars:
+    if text_size(draw, text, font)[0] <= max_width:
         return text
-    return text[: max_chars - 3].rstrip() + "..."
+
+    ellipsis = "..."
+    available = max_width - text_size(draw, ellipsis, font)[0]
+    if available <= 0:
+        return ellipsis
+
+    result = ""
+    for char in text:
+        if text_size(draw, result + char, font)[0] > available:
+            break
+        result += char
+    return result.rstrip() + ellipsis
 
 
 def chart_footer(year: int, extra_poi_csv: list[Path]) -> str:
@@ -61,92 +110,97 @@ def write_horizontal_bar_chart(
     chart_rows = rows if rows else [{"label": "Nessun dato", "value": 0, "value_label": ""}]
     height = margin_top + len(chart_rows) * row_height + footer_height
 
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+
+    text_main = "#1f2933"
+    text_muted = "#52616b"
+    axis_color = "#697985"
+    grid_color = "#e4e9ed"
+
+    draw.text((36, 18), title, fill=text_main, font=TITLE_FONT)
+    draw.text((36, 56), subtitle, fill=text_muted, font=SUBTITLE_FONT)
+
     max_value = max(float(row["value"]) for row in chart_rows)
     axis_max = max_value if max_value > 0 else 1.0
 
-    svg: list[str] = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        (
-            f'<svg xmlns="http://www.w3.org/2000/svg" '
-            f'width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
-        ),
-        '<rect width="100%" height="100%" fill="#ffffff"/>',
-        (
-            '<style>'
-            '.title{font:700 28px Arial,sans-serif;fill:#1f2933}'
-            '.subtitle{font:400 15px Arial,sans-serif;fill:#52616b}'
-            '.axis{font:400 12px Arial,sans-serif;fill:#697985}'
-            '.label{font:600 14px Arial,sans-serif;fill:#1f2933}'
-            '.value{font:600 13px Arial,sans-serif;fill:#1f2933}'
-            '.footer{font:400 12px Arial,sans-serif;fill:#697985}'
-            '</style>'
-        ),
-        f'<text x="36" y="42" class="title">{html_escape(title)}</text>',
-        f'<text x="36" y="70" class="subtitle">{html_escape(subtitle)}</text>',
-    ]
-
     axis_y = margin_top - 22
-    axis_label_y = axis_y - 32
-    tick_label_y = axis_y - 8
+    axis_label_y = axis_y - 42
+    tick_label_y = axis_y - 22
     if x_axis_label:
-        svg.append(
-            f'<text x="{margin_left}" y="{axis_label_y}" class="axis">'
-            f'{html_escape(x_axis_label)}</text>'
-        )
+        draw.text((margin_left, axis_label_y), x_axis_label, fill=axis_color, font=AXIS_FONT)
+
     for tick in range(5):
         fraction = tick / 4
         x_pos = margin_left + fraction * plot_width
         tick_value = axis_max * fraction
         tick_label = format_rate_it(tick_value) if axis_max < 10 else format_int_it(round(tick_value))
-        svg.append(
-            f'<line x1="{x_pos:.1f}" y1="{axis_y}" x2="{x_pos:.1f}" '
-            f'y2="{height - footer_height + 8}" stroke="#e4e9ed" stroke-width="1"/>'
-        )
-        svg.append(
-            f'<text x="{x_pos:.1f}" y="{tick_label_y}" class="axis" '
-            f'text-anchor="middle">{html_escape(tick_label)}</text>'
-        )
+        draw.line((x_pos, axis_y, x_pos, height - footer_height + 8), fill=grid_color, width=1)
+        tick_width, _ = text_size(draw, tick_label, AXIS_FONT)
+        draw.text((x_pos - tick_width / 2, tick_label_y), tick_label, fill=axis_color, font=AXIS_FONT)
 
+    max_label_width = margin_left - 54
     for index, row in enumerate(chart_rows):
         y_center = margin_top + index * row_height + row_height / 2
         value = float(row["value"])
         bar_width = (value / axis_max) * plot_width if axis_max else 0
-        label = truncate_label(row["label"])
+        label = truncate_label(draw, row["label"], LABEL_FONT, max_label_width)
         value_label = str(row.get("value_label", ""))
 
-        svg.append(
-            f'<text x="{margin_left - 18}" y="{y_center + 5:.1f}" '
-            f'class="label" text-anchor="end">{html_escape(label)}</text>'
-        )
-        svg.append(
-            f'<rect x="{margin_left}" y="{y_center - bar_height / 2:.1f}" '
-            f'width="{bar_width:.1f}" height="{bar_height}" rx="3" fill="{bar_color}"/>'
-        )
-        svg.append(
-            f'<text x="{margin_left + bar_width + 10:.1f}" y="{y_center + 5:.1f}" '
-            f'class="value">{html_escape(value_label)}</text>'
+        label_width, label_height = text_size(draw, label, LABEL_FONT)
+        draw.text(
+            (margin_left - 18 - label_width, y_center - label_height / 2 - 1),
+            label,
+            fill=text_main,
+            font=LABEL_FONT,
         )
 
+        bar_top = y_center - bar_height / 2
+        draw.rounded_rectangle(
+            (margin_left, bar_top, margin_left + bar_width, bar_top + bar_height),
+            radius=3,
+            fill=bar_color,
+        )
+
+        value_width, value_height = text_size(draw, value_label, VALUE_FONT)
+        outside_x = margin_left + bar_width + 10
+        if outside_x + value_width <= width - 36:
+            draw.text(
+                (outside_x, y_center - value_height / 2 - 1),
+                value_label,
+                fill=text_main,
+                font=VALUE_FONT,
+            )
+        else:
+            inside_x = max(margin_left + 8, margin_left + bar_width - value_width - 8)
+            draw.text(
+                (inside_x, y_center - value_height / 2 - 1),
+                value_label,
+                fill="white",
+                font=VALUE_FONT,
+            )
+
     if max_value == 0:
-        svg.append(
-            f'<text x="{margin_left}" y="{margin_top + 50}" class="subtitle">'
-            'Nessun kebab conteggiato con la soglia impostata.</text>'
+        draw.text(
+            (margin_left, margin_top + 42),
+            "Nessun kebab conteggiato con la soglia impostata.",
+            fill=text_muted,
+            font=SUBTITLE_FONT,
         )
 
     footer_separator_y = height - footer_height + 24
-    footer_first_line_y = footer_separator_y + 22
-    svg.append(
-        f'<line x1="36" y1="{footer_separator_y}" x2="{width - 36}" '
-        f'y2="{footer_separator_y}" stroke="#e4e9ed" stroke-width="1"/>'
-    )
+    footer_first_line_y = footer_separator_y + 18
+    draw.line((36, footer_separator_y, width - 36, footer_separator_y), fill=grid_color, width=1)
     for line_index, line in enumerate(footer_lines):
-        line_y = footer_first_line_y + line_index * 18
-        svg.append(f'<text x="36" y="{line_y}" class="footer">{html_escape(line)}</text>')
-
-    svg.append("</svg>")
+        draw.text(
+            (36, footer_first_line_y + line_index * 18),
+            line,
+            fill=axis_color,
+            font=FOOTER_FONT,
+        )
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(svg), encoding="utf-8")
+    image.save(path, format="PNG")
 
 
 def write_charts(
@@ -188,7 +242,7 @@ def write_charts(
         )
 
     write_horizontal_bar_chart(
-        out_dir / "grafico_province_per_1000.svg",
+        out_dir / "grafico_province_per_1000.png",
         "Kebabbari per 1.000 abitanti - province Marche",
         "Kebabbari per 1.000 abitanti",
         province_chart_rows,
@@ -217,7 +271,7 @@ def write_charts(
         )
 
     write_horizontal_bar_chart(
-        out_dir / "grafico_province_per_100_ristoranti.svg",
+        out_dir / "grafico_province_per_100_ristoranti.png",
         "Kebabbari per 100 ristoranti - province Marche",
         "Kebabbari per 100 ristoranti OSM",
         province_restaurant_chart_rows,
@@ -247,7 +301,7 @@ def write_charts(
         )
 
     write_horizontal_bar_chart(
-        out_dir / "grafico_comuni_per_numero.svg",
+        out_dir / "grafico_comuni_per_numero.png",
         "Comuni con piu' kebabbari censiti",
         "Numero di kebabbari censiti",
         top_count_rows,
@@ -276,7 +330,7 @@ def write_charts(
         )
 
     write_horizontal_bar_chart(
-        out_dir / "grafico_comuni_per_1000.svg",
+        out_dir / "grafico_comuni_per_1000.png",
         "Comuni con tasso piu' alto",
         "Kebabbari per 1.000 abitanti",
         top_rate_rows,
@@ -308,7 +362,7 @@ def write_charts(
         )
 
     write_horizontal_bar_chart(
-        out_dir / "grafico_comuni_per_100_ristoranti.svg",
+        out_dir / "grafico_comuni_per_100_ristoranti.png",
         "Comuni con piu' kebabbari rispetto ai ristoranti",
         "Kebabbari per 100 ristoranti OSM",
         top_restaurant_rate_rows,

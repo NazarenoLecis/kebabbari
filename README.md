@@ -13,9 +13,15 @@ Il progetto usa:
 
 - `marche_kebab_runner.py`: configurazione e flusso principale.
 - `marche_kebab_utils.py`: download dati, parsing, geografia, deduplica e indicatori.
-- `marche_kebab_charts.py`: generazione dei grafici SVG.
+- `marche_kebab_charts.py`: generazione dei grafici PNG.
 
 ## Uso
+
+Installa la dipendenza per creare i PNG:
+
+```powershell
+py -m pip install -r requirements.txt
+```
 
 Modifica le variabili in `marche_kebab_runner.py`, poi esegui:
 
@@ -36,15 +42,15 @@ Lo script puo' generare:
 - CSV con elenco kebabbari;
 - CSV con punti OSM di ristorazione;
 - distribuzione per comune, provincia e regione;
-- grafici SVG con rapporto kebabbari/popolazione;
-- grafici SVG con rapporto kebabbari/ristoranti.
+- grafici PNG con rapporto kebabbari/popolazione;
+- grafici PNG con rapporto kebabbari/ristoranti.
 
 Gli output sono separati in:
 
 - `output/marche_kebab/file`: CSV e metadati;
-- `output/marche_kebab/grafici`: grafici SVG.
+- `output/marche_kebab/grafici`: grafici PNG.
 
-Nel repository vengono pubblicati gli SVG in `output/marche_kebab/grafici`, mentre CSV e cache locali sono ignorati da Git.
+Nel repository vengono pubblicati i PNG in `output/marche_kebab/grafici`, mentre CSV e cache locali sono ignorati da Git.
 
 ## Nota metodologica
 

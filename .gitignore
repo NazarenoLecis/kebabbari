@@ -5,7 +5,7 @@ data/cache/
 output/**
 !output/
 !output/**/
-!output/**/*.svg
+!output/**/*.png
 
 .venv/
 venv/

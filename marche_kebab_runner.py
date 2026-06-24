@@ -285,11 +285,11 @@ def esegui_analisi(
         print(f"- {file_dir / 'distribuzione_kebabbari_province.csv'}")
         print(f"- {file_dir / 'distribuzione_kebabbari_regione.csv'}")
     if scrivi_grafici:
-        print(f"- {chart_dir / 'grafico_province_per_1000.svg'}")
-        print(f"- {chart_dir / 'grafico_province_per_100_ristoranti.svg'}")
-        print(f"- {chart_dir / 'grafico_comuni_per_numero.svg'}")
-        print(f"- {chart_dir / 'grafico_comuni_per_1000.svg'}")
-        print(f"- {chart_dir / 'grafico_comuni_per_100_ristoranti.svg'}")
+        print(f"- {chart_dir / 'grafico_province_per_1000.png'}")
+        print(f"- {chart_dir / 'grafico_province_per_100_ristoranti.png'}")
+        print(f"- {chart_dir / 'grafico_comuni_per_numero.png'}")
+        print(f"- {chart_dir / 'grafico_comuni_per_1000.png'}")
+        print(f"- {chart_dir / 'grafico_comuni_per_100_ristoranti.png'}")
     print("")
     print(
         f"Totale conteggiato ({min_confidence}+): "
