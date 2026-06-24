@@ -29,13 +29,6 @@ Parametro principale per gli output:
 TIPO_OUTPUT = "entrambi"  # "csv", "grafici", oppure "entrambi"
 ```
 
-La serie storica provinciale e' configurata qui:
-
-```python
-GENERA_SERIE_STORICA = True
-ANNI_SERIE_STORICA = list(range(ANNO_ISTAT - 24, ANNO_ISTAT + 1))
-```
-
 ## Output
 
 Lo script puo' generare:
@@ -45,9 +38,13 @@ Lo script puo' generare:
 - distribuzione per comune, provincia e regione;
 - grafici SVG con rapporto kebabbari/popolazione;
 - grafici SVG con rapporto kebabbari/ristoranti.
-- grafici SVG di serie storica provinciale.
 
-Nel repository vengono pubblicati gli SVG in `output/`, mentre CSV e cache locali sono ignorati da Git.
+Gli output sono separati in:
+
+- `output/marche_kebab/file`: CSV e metadati;
+- `output/marche_kebab/grafici`: grafici SVG.
+
+Nel repository vengono pubblicati gli SVG in `output/marche_kebab/grafici`, mentre CSV e cache locali sono ignorati da Git.
 
 ## Nota metodologica
 
@@ -60,5 +57,3 @@ Il rapporto con i ristoranti usa come denominatore i punti OpenStreetMap con:
 - `amenity=food_court`
 
 Le fonti e la dicitura `Elaborazione di Nazareno Lecis` sono riportate nei grafici generati.
-
-La serie storica prova a ricostruire 25 anni usando gli snapshot storici OpenStreetMap al 1 gennaio di ogni anno. Gli anni non disponibili nelle fonti ISTAT/Overpass vengono saltati e segnalati durante l'esecuzione. La serie misura la presenza dei POI in OpenStreetMap, non un registro ufficiale delle aperture.

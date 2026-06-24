@@ -35,7 +35,6 @@ from typing import Any
 
 REGION_CODE = "11"
 REGION_NAME = "Marche"
-MARCHE_BBOX = (42.65, 12.15, 44.25, 14.05)  # south, west, north, east
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
@@ -326,40 +325,24 @@ def load_comune_shapes(year: int, cache_dir: Path, refresh: bool) -> list[dict[s
     return comuni
 
 
-def build_overpass_query(
-    include_broad_keywords: bool,
-    snapshot_date: str | None = None,
-    timeout_seconds: int = 90,
-) -> str:
+def build_overpass_query(include_broad_keywords: bool) -> str:
     keyword_regex = STRICT_OVERPASS_REGEX
     if include_broad_keywords:
         keyword_regex = f"{keyword_regex}|{BROAD_OVERPASS_REGEX}"
 
-    date_clause = f'[date:"{snapshot_date}"]' if snapshot_date else ""
-    if snapshot_date:
-        south, west, north, east = MARCHE_BBOX
-        preamble = ""
-        scope = f"({south},{west},{north},{east})"
-    else:
-        preamble = (
-            'area["boundary"="administrative"]["admin_level"="4"]'
-            '["ISO3166-2"="IT-57"]->.searchArea;'
-        )
-        scope = "(area.searchArea)"
-
     return f"""
-[out:json][timeout:{timeout_seconds}]{date_clause};
-{preamble}
+[out:json][timeout:90];
+area["boundary"="administrative"]["admin_level"="4"]["ISO3166-2"="IT-57"]->.searchArea;
 (
-  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["cuisine"~"{keyword_regex}", i]{scope};
-  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["name"~"{keyword_regex}", i]{scope};
-  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["alt_name"~"{keyword_regex}", i]{scope};
-  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["brand"~"{keyword_regex}", i]{scope};
-  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["operator"~"{keyword_regex}", i]{scope};
-  nwr["shop"]["cuisine"~"{keyword_regex}", i]{scope};
-  nwr["shop"]["name"~"{keyword_regex}", i]{scope};
-  nwr["shop"]["brand"~"{keyword_regex}", i]{scope};
-  nwr["shop"]["operator"~"{keyword_regex}", i]{scope};
+  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["cuisine"~"{keyword_regex}", i](area.searchArea);
+  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["name"~"{keyword_regex}", i](area.searchArea);
+  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["alt_name"~"{keyword_regex}", i](area.searchArea);
+  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["brand"~"{keyword_regex}", i](area.searchArea);
+  nwr["amenity"~"{FOOD_AMENITY_REGEX}"]["operator"~"{keyword_regex}", i](area.searchArea);
+  nwr["shop"]["cuisine"~"{keyword_regex}", i](area.searchArea);
+  nwr["shop"]["name"~"{keyword_regex}", i](area.searchArea);
+  nwr["shop"]["brand"~"{keyword_regex}", i](area.searchArea);
+  nwr["shop"]["operator"~"{keyword_regex}", i](area.searchArea);
 );
 out center tags;
 """.strip()
@@ -370,27 +353,19 @@ def fetch_osm_payload(
     refresh: bool,
     include_broad_keywords: bool,
     overpass_url: str,
-    snapshot_date: str | None = None,
 ) -> dict[str, Any]:
-    cache_prefix = "osm_kebab_marche_broad" if include_broad_keywords else "osm_kebab_marche"
-    if snapshot_date:
-        cache_prefix += "_" + snapshot_date[:10]
-    cache_name = cache_prefix + ".json"
+    cache_name = "osm_kebab_marche_broad.json" if include_broad_keywords else "osm_kebab_marche.json"
     cache_path = cache_dir / cache_name
     if cache_path.exists() and not refresh:
         return json.loads(cache_path.read_text(encoding="utf-8"))
 
-    query_timeout = 45 if snapshot_date else 90
-    query = build_overpass_query(include_broad_keywords, snapshot_date, query_timeout)
+    query = build_overpass_query(include_broad_keywords)
     body = urllib.parse.urlencode({"data": query}).encode("utf-8")
-    if snapshot_date:
-        print(f"Download: OpenStreetMap via Overpass ({snapshot_date[:10]})", flush=True)
-    else:
-        print("Download: OpenStreetMap via Overpass", flush=True)
+    print("Download: OpenStreetMap via Overpass", flush=True)
     payload = make_request(
         overpass_url,
         data=body,
-        timeout=75 if snapshot_date else 180,
+        timeout=180,
         content_type="application/x-www-form-urlencoded; charset=utf-8",
     )
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -543,15 +518,8 @@ def load_osm_pois(
     refresh: bool,
     include_broad_keywords: bool,
     overpass_url: str,
-    snapshot_date: str | None = None,
 ) -> list[dict[str, Any]]:
-    payload = fetch_osm_payload(
-        cache_dir,
-        refresh,
-        include_broad_keywords,
-        overpass_url,
-        snapshot_date,
-    )
+    payload = fetch_osm_payload(cache_dir, refresh, include_broad_keywords, overpass_url)
     pois_by_id: dict[str, dict[str, Any]] = {}
     for element in payload.get("elements", []):
         poi = osm_element_to_poi(element, include_broad_keywords)
